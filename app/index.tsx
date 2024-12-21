@@ -5,17 +5,23 @@ import {
   runAsync,
   useCameraDevice,
   useFrameProcessor,
+  useSkiaFrameProcessor,
 } from "react-native-vision-camera";
 import {
   Face,
   useFaceDetector,
   FaceDetectionOptions,
+  Contours,
 } from "react-native-vision-camera-face-detector";
 import { Worklets } from "react-native-worklets-core";
+import { Skia, TileMode, ClipOp } from "@shopify/react-native-skia";
 
 export default function App() {
   const faceDetectionOptions = useRef<FaceDetectionOptions>({
-    // detection options
+    performanceMode: "fast",
+    contourMode: "all",
+    landmarkMode: "none",
+    classificationMode: "none",
   }).current;
 
   const device = useCameraDevice("front");
@@ -32,13 +38,55 @@ export default function App() {
     console.log("faces detected", faces);
   });
 
-  const frameProcessor = useFrameProcessor(
+  const blurRadius = 25;
+  const blurFilter = Skia.ImageFilter.MakeBlur(
+    blurRadius,
+    blurRadius,
+    TileMode.Repeat,
+    null
+  );
+  const paint = Skia.Paint();
+  paint.setImageFilter(blurFilter);
+
+  const frameProcessor = useSkiaFrameProcessor(
     (frame) => {
       "worklet";
+      // 1. Render frame as it is
+      frame.render();
+
+      // 2. Detect faces in frame
       const faces = detectFaces(frame);
-      handleDetectedFaces(faces);
+
+      // 3. Draw a blur mask over each face
+      for (const face of faces) {
+        const path = Skia.Path.Make();
+
+        const necessaryContours: (keyof Contours)[] = [
+          "FACE",
+          "LEFT_CHEEK",
+          "RIGHT_CHEEK",
+        ];
+        for (const key of necessaryContours) {
+          const points = face.contours[key];
+          points.forEach((point: any, index: number) => {
+            if (index === 0) {
+              // it's a starting point
+              path.moveTo(point.x, point.y);
+            } else {
+              // it's a continuation
+              path.lineTo(point.x, point.y);
+            }
+          });
+          path.close();
+        }
+
+        frame.save();
+        frame.clipPath(path, ClipOp.Intersect, true);
+        frame.render(paint);
+        frame.restore();
+      }
     },
-    [detectFaces, handleDetectedFaces]
+    [paint, detectFaces]
   );
 
   return (
