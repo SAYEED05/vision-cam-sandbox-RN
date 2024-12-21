@@ -27,12 +27,24 @@ export default function Index() {
   useEffect(() => {
     if (!hasPermission) {
       requestPermission();
+    } else {
+      setShowCamera(true);
     }
   }, [hasPermission]);
 
   const frameProcessor = useFrameProcessor((frame) => {
     "worklet";
-    console.log(`Frame: ${frame.width}x${frame.height} (${frame.pixelFormat})`);
+    console.log("called");
+    console.log(frame, "frame");
+    if (frame.pixelFormat === "rgb") {
+      const buffer = frame.toArrayBuffer();
+      const data = new Uint8Array(buffer);
+      console.log(`Pixel at 0,0: RGB(${data[0]}, ${data[1]}, ${data[2]})`);
+    } else if (frame.pixelFormat === "yuv") {
+      const buffer = frame.toArrayBuffer();
+      const data = new Uint8Array(buffer);
+      console.log(`Pixel at 0,0: YUV(${data[0]}, ${data[1]}, ${data[2]})`);
+    }
   }, []);
 
   return (
