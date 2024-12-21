@@ -1,69 +1,58 @@
-import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useEffect, useState, useRef } from "react";
 import {
   Camera,
+  runAsync,
   useCameraDevice,
-  useCameraPermission,
   useFrameProcessor,
 } from "react-native-vision-camera";
+import {
+  Face,
+  useFaceDetector,
+  FaceDetectionOptions,
+} from "react-native-vision-camera-face-detector";
+import { Worklets } from "react-native-worklets-core";
 
-export default function Index() {
-  const device = useCameraDevice("back");
-  const { hasPermission } = useCameraPermission();
-  const [showCamera, setShowCamera] = useState(false);
+export default function App() {
+  const faceDetectionOptions = useRef<FaceDetectionOptions>({
+    // detection options
+  }).current;
 
-  const requestPermission = async () => {
-    if (hasPermission) {
-      setShowCamera(true);
-    } else {
-      const permissionResult = await Camera.requestCameraPermission();
-      if (permissionResult) {
-        // Permission granted
-        setShowCamera(true);
-      }
-    }
-  };
+  const device = useCameraDevice("front");
+  const { detectFaces } = useFaceDetector(faceDetectionOptions);
 
   useEffect(() => {
-    if (!hasPermission) {
-      requestPermission();
-    } else {
-      setShowCamera(true);
-    }
-  }, [hasPermission]);
+    (async () => {
+      const status = await Camera.requestCameraPermission();
+      console.log({ status });
+    })();
+  }, [device]);
 
-  const frameProcessor = useFrameProcessor((frame) => {
-    "worklet";
-    console.log("called");
-    console.log(frame, "frame");
-    if (frame.pixelFormat === "rgb") {
-      const buffer = frame.toArrayBuffer();
-      const data = new Uint8Array(buffer);
-      console.log(`Pixel at 0,0: RGB(${data[0]}, ${data[1]}, ${data[2]})`);
-    } else if (frame.pixelFormat === "yuv") {
-      const buffer = frame.toArrayBuffer();
-      const data = new Uint8Array(buffer);
-      console.log(`Pixel at 0,0: YUV(${data[0]}, ${data[1]}, ${data[2]})`);
-    }
-  }, []);
+  const handleDetectedFaces = Worklets.createRunOnJS((faces: Face[]) => {
+    console.log("faces detected", faces);
+  });
+
+  const frameProcessor = useFrameProcessor(
+    (frame) => {
+      "worklet";
+      const faces = detectFaces(frame);
+      handleDetectedFaces(faces);
+    },
+    [detectFaces, handleDetectedFaces]
+  );
 
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      {device && hasPermission && showCamera && (
+    <View style={{ flex: 1 }}>
+      {!!device ? (
         <Camera
           style={StyleSheet.absoluteFill}
           device={device}
           isActive={true}
           frameProcessor={frameProcessor}
         />
+      ) : (
+        <Text>No Device</Text>
       )}
-      <Text>Edit app/index.tsx to edit this screen.</Text>
     </View>
   );
 }
